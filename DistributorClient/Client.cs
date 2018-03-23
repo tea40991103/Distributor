@@ -12,6 +12,9 @@ namespace Distributor
 {
 	public class Client
 	{
+		public static bool Verbose = false;
+		public readonly static string ProcessName = Process.GetCurrentProcess().ProcessName;
+
 		static string NodePoolFilePath;
 		static List<Node> NodePool = new List<Node>();
 		public static int NodeCount
@@ -58,14 +61,14 @@ namespace Distributor
 					NodePoolFilePath = nodePoolFilePath;
 					InputFileName = inputFileName;
 					OutputFileName = outputFileName;
-					File.SetAttributes(NodePoolFilePath, FileAttributes.ReadOnly);
 				}
 				else
 					throw new FileNotFoundException();
 
 				try
 				{
-					var nodeLines = File.ReadAllLines(NodePoolFilePath);
+					var nodeLines = Tools.IsAnsiEncoding(NodePoolFilePath) ? File.ReadAllLines(NodePoolFilePath, Encoding.Default) : File.ReadAllLines(NodePoolFilePath);
+					File.SetAttributes(NodePoolFilePath, FileAttributes.ReadOnly);
 					foreach (var nodeLine in nodeLines) NodePool.Add(new Node(nodeLine));
 				}
 				catch
@@ -112,7 +115,7 @@ namespace Distributor
 
 				await Task.Delay(PidRandom.Next(1000 * NodeCount));
 				sw.Start();
-				do 
+				do
 				{
 					ReadNodeStates();
 					for (nodeIndex = 0; nodeIndex < NodeCount; ++nodeIndex)
@@ -123,11 +126,13 @@ namespace Distributor
 							WriteNodeStates();
 							break;
 						}
-					if (secondsTimeout > 0 && sw.Elapsed.Seconds > secondsTimeout)
+					if (node != null)
+						break;
+					else if (secondsTimeout > 0 && sw.Elapsed.Seconds > secondsTimeout)
 						throw new TimeoutException();
 					else
 						await Task.Delay(5000);
-				} while (node == null);
+				} while (true);
 
 				using (var tcpClient = new TcpClient())
 				{
@@ -198,13 +203,16 @@ namespace Distributor
 				NodeStates[nodeIndex] = idel;
 				WriteNodeStates();
 			}
+			else
+				throw new InvalidOperationException();
 		}
 
 		public byte[] GetInputMessage(ushort id = 0)
 		{
 			if (String.IsNullOrEmpty(InputFileName)) throw new InvalidOperationException();
 
-			var inputFileContent = File.ReadAllText(LocalDir + InputFileName);
+			var inputFilePath = LocalDir + InputFileName;
+			var inputFileContent = Tools.IsAnsiEncoding(inputFilePath) ? File.ReadAllText(inputFilePath, Encoding.Default) : File.ReadAllText(inputFilePath);
 			var messageStr = Message.InputHeader + Convert.ToChar(id) + InputFileName + Message.Separator + OutputFileName + Message.Separator + inputFileContent + Message.MessageEnd;
 			return Encoding.Unicode.GetBytes(messageStr);
 		}
@@ -212,7 +220,11 @@ namespace Distributor
 		public static void ClearNodePool()
 		{
 			NodePool.Clear();
-			if (File.Exists(NodePoolFilePath)) File.SetAttributes(NodePoolFilePath, FileAttributes.Normal);
+			if (File.Exists(NodePoolFilePath) && Process.GetProcessesByName(ProcessName).Length == 1)
+			{
+				File.SetAttributes(NodePoolFilePath, FileAttributes.Normal);
+				File.Delete(NodeStatesFilePath);
+			}
 		}
 
 		static void ReadNodeStates()

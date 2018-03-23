@@ -8,6 +8,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{2D274649-E585-405B-A1C4-188205DD28B3}"
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
+		README.md = README.md
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DistributorClient", "DistributorClient\DistributorClient.csproj", "{827E5A97-7766-422F-9C95-08D46C8CF263}"

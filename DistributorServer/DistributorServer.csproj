@@ -51,7 +51,10 @@
     <Compile Include="..\Shared\Node.cs">
       <Link>Node.cs</Link>
     </Compile>
-    <Compile Include="Program.cs" />
+    <Compile Include="..\Shared\Tools.cs">
+      <Link>Tools.cs</Link>
+    </Compile>
+    <Compile Include="ServerProgram.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Server.cs" />
   </ItemGroup>
