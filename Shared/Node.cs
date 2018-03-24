@@ -5,6 +5,7 @@ using System.Linq;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Distributor
@@ -93,6 +94,34 @@ namespace Distributor
 				process.Kill();
 				throw new TimeoutException();
 			}
+		}
+
+		public async Task Execute(CancellationToken ct, int secondsTimeout = -1, string workingDir = "")
+		{
+			var process = new Process();
+			process.StartInfo.FileName = ExecutorPath;
+			process.StartInfo.Arguments = ArgStr;
+			process.StartInfo.UseShellExecute = false;
+			process.StartInfo.WorkingDirectory = workingDir;
+
+			process.Start();
+			do
+			{
+				try
+				{
+					await Task.Delay(1000, ct);
+				}
+				catch (TaskCanceledException ex)
+				{
+					process.Kill();
+					throw ex;
+				}
+				if (--secondsTimeout == 0)
+				{
+					process.Kill();
+					throw new TimeoutException();
+				}
+			} while (!process.HasExited);
 		}
 	}
 
