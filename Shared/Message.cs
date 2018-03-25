@@ -11,7 +11,8 @@ namespace Distributor
 		public const char InputHeader = '\u0080';
 		public const char OutputHeader = '\u0081';
 		public const char ExecutionHeader = '\u0091';
-		public const char ResponseHeader = '\u0092';
+		public const char CancellationHeader = '\u0092';
+		public const char ResponseHeader = '\u0010';
 		public const char Successful = '\u0011';
 		public const char Failed = '\u0012';
 		public const char NodeIsIdel = '\u0013';
@@ -32,7 +33,7 @@ namespace Distributor
 			else if (i < 0)
 				message = message.Substring(2);
 			else
-				throw new FormatException();
+				throw new ArgumentException();
 
 			return message;
 		}

@@ -21,40 +21,23 @@ namespace Distributor
 	{
 		public const int DefaultPort = 57220;
 
-		public IPEndPoint EndPoint;
+		public IPEndPoint IpEndPoint;
 		string ExecutorPath, ArgStr;
 
 		public Node(string nodeLine)
 		{
-			if (String.IsNullOrEmpty(nodeLine)) throw new ArgumentNullException();
+			if (nodeLine == null)
+				throw new ArgumentNullException();
+			else if (String.IsNullOrWhiteSpace(nodeLine))
+				throw new ArgumentException();
 
 			var tabIndex1 = nodeLine.IndexOf(Message.Separator);
-			var endPointStr = nodeLine.Substring(0, tabIndex1);
-			var colonIndex = endPointStr.IndexOf(':');
-
-			string ipStr;
-			int port;
-			if (colonIndex >= 0)
-			{
-				ipStr = endPointStr.Substring(0, colonIndex);
-				port = Convert.ToInt32(endPointStr.Substring(colonIndex + 1));
-			}
-			else
-			{
-				ipStr = endPointStr;
-				port = DefaultPort;
-			}
-
-			IPAddress ip;
-			try
-			{
-				ip = Dns.GetHostAddresses(ipStr)[0];
-			}
-			catch (System.Net.Sockets.SocketException ex)
-			{
-				throw ex;
-			}
-			EndPoint = new IPEndPoint(ip, port);
+			var ipEndPointStr = nodeLine.Substring(0, tabIndex1);
+			string ipAddressStr;
+			int port = Tools.ParseIPEndPoint(ipEndPointStr, out ipAddressStr);
+			if (port == 0) port = DefaultPort;
+			if (ipAddressStr == "") ipAddressStr = "localhost";
+			IpEndPoint = new IPEndPoint(Dns.GetHostAddresses(ipAddressStr)[0], port);
 
 			var tabIndex2 = nodeLine.LastIndexOf(Message.Separator);
 			if (tabIndex2 == tabIndex1)
@@ -67,6 +50,7 @@ namespace Distributor
 				ExecutorPath = nodeLine.Substring(tabIndex1 + 1, tabIndex2 - tabIndex1 - 1);
 				ArgStr = nodeLine.Substring(tabIndex2 + 1);
 			}
+			if (String.IsNullOrWhiteSpace(ExecutorPath)) throw new FormatException();
 		}
 
 		public Node(byte[] message) : this(Message.ReadMessage(message)) { }
@@ -76,7 +60,10 @@ namespace Distributor
 			if (String.IsNullOrEmpty(ExecutorPath)) throw new InvalidOperationException();
 
 			var argsStr = String.IsNullOrEmpty(ArgStr) ? "" : Message.Separator + ArgStr;
-			var messageStr = Message.ExecutionHeader + Convert.ToChar(id) + EndPoint.ToString() + Message.Separator + ExecutorPath + argsStr + Message.MessageEnd;
+			var messageStr = String.Format("{0}{1}{2}{3}{4}{5}{6}",
+				Message.ExecutionHeader, Convert.ToChar(id),
+				IpEndPoint.ToString(), Message.Separator,
+				ExecutorPath, argsStr, Message.MessageEnd);
 			return Encoding.Unicode.GetBytes(messageStr);
 		}
 

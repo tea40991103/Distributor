@@ -54,8 +54,11 @@ namespace Distributor
 
 		public Client(string nodePoolFilePath, string inputFileName, string outputFileName)
 		{
-			if (String.IsNullOrEmpty(nodePoolFilePath) || String.IsNullOrEmpty(inputFileName) || String.IsNullOrEmpty(outputFileName))
+			if (nodePoolFilePath == null || inputFileName == null || outputFileName == null)
 				throw new ArgumentNullException();
+			else if (String.IsNullOrWhiteSpace(nodePoolFilePath) || String.IsNullOrWhiteSpace(inputFileName) || String.IsNullOrWhiteSpace(outputFileName))
+				throw new ArgumentException();
+
 			if (NodeCount == 0)
 			{
 				if (File.Exists(nodePoolFilePath))
@@ -71,12 +74,12 @@ namespace Distributor
 				{
 					var nodeLines = Tools.IsAnsiEncoding(NodePoolFilePath) ? File.ReadAllLines(NodePoolFilePath, Encoding.Default) : File.ReadAllLines(NodePoolFilePath);
 					File.SetAttributes(NodePoolFilePath, FileAttributes.ReadOnly);
-					foreach (var nodeLine in nodeLines) NodePool.Add(new Node(nodeLine));
+					foreach (var nodeLine in nodeLines) try { NodePool.Add(new Node(nodeLine)); } catch { }
 				}
-				catch
+				catch (Exception ex)
 				{
 					ClearNodePool();
-					throw new FormatException();
+					throw ex;
 				}
 
 				NodeStatesFilePath = NodePoolFilePath + ".states";
@@ -94,15 +97,15 @@ namespace Distributor
 					}
 					WriteNodeStates();
 				}
-				catch
+				catch (Exception ex)
 				{
 					ClearNodePool();
-					throw new System.Security.SecurityException();
+					throw ex;
 				}
 			}
 			else if (nodePoolFilePath != NodePoolFilePath || inputFileName != InputFileName || outputFileName != OutputFileName)
 			{
-				throw new ArgumentException();
+				throw new InvalidOperationException();
 			}
 		}
 
@@ -115,6 +118,9 @@ namespace Distributor
 				else
 					ExecutionCTS = new CancellationTokenSource();
 
+				var tcpClient = new TcpClient(AddressFamily.InterNetworkV6);
+				tcpClient.Client.DualMode = true;
+				NetworkStream stream = null;
 				try
 				{
 					var sw = new Stopwatch();
@@ -143,78 +149,84 @@ namespace Distributor
 							await Task.Delay(5000, ExecutionCTS.Token);
 					} while (true);
 
-					using (var tcpClient = new TcpClient())
+					tcpClient.ConnectAsync(node.IpEndPoint.Address, node.IpEndPoint.Port);
+					do
 					{
-						tcpClient.ConnectAsync(node.EndPoint.Address, node.EndPoint.Port);
-						do
+						if (secondsTimeout > 0 && sw.Elapsed.Seconds > secondsTimeout)
+							throw new TimeoutException();
+						else
+							await Task.Delay(500, ExecutionCTS.Token);
+					} while (!tcpClient.Connected);
+
+					stream = tcpClient.GetStream();
+					var reader = new StreamReader(stream, Encoding.Unicode);
+					string message;
+
+					var inputMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
+					var inputMessage = GetInputMessage(inputMessageId);
+					stream.WriteAsync(inputMessage, 0, inputMessage.Length);
+
+					var executionMessageId = ushort.MaxValue;
+					do
+					{
+						while (!stream.DataAvailable)
 						{
 							if (secondsTimeout > 0 && sw.Elapsed.Seconds > secondsTimeout)
 								throw new TimeoutException();
 							else
 								await Task.Delay(500, ExecutionCTS.Token);
-						} while (!tcpClient.Connected);
-
-						using (var stream = tcpClient.GetStream())
-						{
-							var reader = new StreamReader(stream, Encoding.Unicode);
-							string message;
-
-							var inputMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
-							var inputMessage = GetInputMessage(inputMessageId);
-							stream.WriteAsync(inputMessage, 0, inputMessage.Length);
-
-							var executionMessageId = ushort.MaxValue;
-							do
-							{
-								while (!stream.DataAvailable)
-								{
-									if (secondsTimeout > 0 && sw.Elapsed.Seconds > secondsTimeout)
-										throw new TimeoutException();
-									else
-										await Task.Delay(500, ExecutionCTS.Token);
-								}
-
-								message = "";
-								do
-								{
-									message += reader.ReadToEnd();
-									if (secondsTimeout > 0 && sw.Elapsed.Seconds > secondsTimeout)
-										throw new TimeoutException();
-									else
-										await Task.Delay(500, ExecutionCTS.Token);
-								} while (message.Last() != Message.MessageEnd);
-
-								if (message[0] == Message.ResponseHeader)
-								{
-									if (message[1] == inputMessageId)
-									{
-										if (message[2] == Message.Successful)
-										{
-											executionMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
-											var executionMessage = node.GetExecutionMessage(executionMessageId);
-											stream.Write(executionMessage, 0, executionMessage.Length);
-										}
-										else
-											throw new ApplicationException();
-									}
-									else if (message[1] == executionMessageId && message[2] == Message.Failed)
-									{
-										throw new ApplicationException();
-									}
-								}
-							} while (message[0] != Message.OutputHeader);
-
-							File.WriteAllText(LocalDir + OutputFileName, Message.ReadMessage(message));
 						}
-					}
+
+						message = "";
+						do
+						{
+							message += reader.ReadToEnd();
+							if (secondsTimeout > 0 && sw.Elapsed.Seconds > secondsTimeout)
+								throw new TimeoutException();
+							else
+								await Task.Delay(500, ExecutionCTS.Token);
+						} while (message.Last() != Message.MessageEnd);
+
+						if (message[0] == Message.ResponseHeader)
+						{
+							if (message[1] == inputMessageId)
+							{
+								if (message[2] == Message.Successful)
+								{
+									executionMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
+									var executionMessage = node.GetExecutionMessage(executionMessageId);
+									stream.Write(executionMessage, 0, executionMessage.Length);
+								}
+								else
+									throw new ApplicationException();
+							}
+							else if (message[1] == executionMessageId && message[2] == Message.Failed)
+							{
+								throw new ApplicationException();
+							}
+						}
+					} while (message[0] != Message.OutputHeader);
+
+					File.WriteAllText(LocalDir + OutputFileName, Message.ReadMessage(message));
 
 					ReadNodeStates();
 					NodeStates[nodeIndex] = idel;
 					WriteNodeStates();
 					return nodeIndex;
 				}
+				catch (Exception ex)
+				{
+					if (tcpClient.Connected)
+					{
+						var cancellationMessage = GetCancellationMessage();
+						stream.Write(cancellationMessage, 0, cancellationMessage.Length);
+					}
+					throw ex;
+				}
 				finally
 				{
+					if (stream != null) stream.Close();
+					tcpClient.Close();
 					ExecutionCTS = null;
 				}
 			}
@@ -228,7 +240,17 @@ namespace Distributor
 
 			var inputFilePath = LocalDir + InputFileName;
 			var inputFileContent = Tools.IsAnsiEncoding(inputFilePath) ? File.ReadAllText(inputFilePath, Encoding.Default) : File.ReadAllText(inputFilePath);
-			var messageStr = Message.InputHeader + Convert.ToChar(id) + InputFileName + Message.Separator + OutputFileName + Message.Separator + inputFileContent + Message.MessageEnd;
+			var messageStr = String.Format("{0}{1}{2}{3}{4}{5}{6}{7}",
+				Message.InputHeader, Convert.ToChar(id),
+				InputFileName, Message.Separator,
+				OutputFileName, Message.Separator,
+				inputFileContent, Message.MessageEnd);
+			return Encoding.Unicode.GetBytes(messageStr);
+		}
+
+		public static byte[] GetCancellationMessage(ushort id = 0)
+		{
+			var messageStr = String.Format("{0}{1}{2}", Message.CancellationHeader, Convert.ToChar(id), Message.MessageEnd);
 			return Encoding.Unicode.GetBytes(messageStr);
 		}
 
