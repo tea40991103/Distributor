@@ -63,10 +63,6 @@ namespace Distributor
 					tcpListener = new TcpListener(IPAddress.Any, port);
 					tcpListenerIPv6 = new TcpListener(IPAddress.IPv6Any, port);
 				}
-				else if (ipAddressStr == "localhost")
-				{
-					tcpListener = new TcpListener(Dns.GetHostAddresses(ipAddressStr)[0], port);
-				}
 				else
 					tcpListener = new TcpListener(IPAddress.Parse(ipAddressStr), port);
 

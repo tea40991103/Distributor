@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.IO;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -143,71 +144,78 @@ namespace Distributor
 							}
 						if (node != null)
 							break;
-						else if (secondsTimeout > 0 && sw.Elapsed.Seconds > secondsTimeout)
+						else if (secondsTimeout > 0 && sw.Elapsed.Seconds >= secondsTimeout)
 							throw new TimeoutException();
 						else
 							await Task.Delay(5000, ExecutionCTS.Token);
 					} while (true);
 
-					tcpClient.ConnectAsync(node.IpEndPoint.Address, node.IpEndPoint.Port);
-					do
+					if (node.IpEndPoint.Address == IPAddress.Loopback)
 					{
-						if (secondsTimeout > 0 && sw.Elapsed.Seconds > secondsTimeout)
-							throw new TimeoutException();
-						else
-							await Task.Delay(500, ExecutionCTS.Token);
-					} while (!tcpClient.Connected);
-
-					stream = tcpClient.GetStream();
-					var reader = new StreamReader(stream, Encoding.Unicode);
-					string message;
-
-					var inputMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
-					var inputMessage = GetInputMessage(inputMessageId);
-					stream.WriteAsync(inputMessage, 0, inputMessage.Length);
-
-					var executionMessageId = ushort.MaxValue;
-					do
+						await node.Execute(ExecutionCTS.Token, secondsTimeout - sw.Elapsed.Seconds, LocalDir);
+					}
+					else
 					{
-						while (!stream.DataAvailable)
-						{
-							if (secondsTimeout > 0 && sw.Elapsed.Seconds > secondsTimeout)
-								throw new TimeoutException();
-							else
-								await Task.Delay(500, ExecutionCTS.Token);
-						}
-
-						message = "";
+						tcpClient.ConnectAsync(node.IpEndPoint.Address, node.IpEndPoint.Port);
 						do
 						{
-							message += reader.ReadToEnd();
-							if (secondsTimeout > 0 && sw.Elapsed.Seconds > secondsTimeout)
+							if (secondsTimeout > 0 && sw.Elapsed.Seconds >= secondsTimeout)
 								throw new TimeoutException();
 							else
 								await Task.Delay(500, ExecutionCTS.Token);
-						} while (message.Last() != Message.MessageEnd);
+						} while (!tcpClient.Connected);
 
-						if (message[0] == Message.ResponseHeader)
+						stream = tcpClient.GetStream();
+						var reader = new StreamReader(stream, Encoding.Unicode);
+						string message;
+
+						var inputMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
+						var inputMessage = GetInputMessage(inputMessageId);
+						stream.WriteAsync(inputMessage, 0, inputMessage.Length);
+
+						var executionMessageId = ushort.MaxValue;
+						do
 						{
-							if (message[1] == inputMessageId)
+							while (!stream.DataAvailable)
 							{
-								if (message[2] == Message.Successful)
-								{
-									executionMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
-									var executionMessage = node.GetExecutionMessage(executionMessageId);
-									stream.Write(executionMessage, 0, executionMessage.Length);
-								}
+								if (secondsTimeout > 0 && sw.Elapsed.Seconds >= secondsTimeout)
+									throw new TimeoutException();
 								else
-									throw new ApplicationException();
+									await Task.Delay(500, ExecutionCTS.Token);
 							}
-							else if (message[1] == executionMessageId && message[2] == Message.Failed)
-							{
-								throw new ApplicationException();
-							}
-						}
-					} while (message[0] != Message.OutputHeader);
 
-					File.WriteAllText(LocalDir + OutputFileName, Message.ReadMessage(message));
+							message = "";
+							do
+							{
+								message += reader.ReadToEnd();
+								if (secondsTimeout > 0 && sw.Elapsed.Seconds >= secondsTimeout)
+									throw new TimeoutException();
+								else
+									await Task.Delay(500, ExecutionCTS.Token);
+							} while (message.Last() != Message.MessageEnd);
+
+							if (message[0] == Message.ResponseHeader)
+							{
+								if (message[1] == inputMessageId)
+								{
+									if (message[2] == Message.Successful)
+									{
+										executionMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
+										var executionMessage = node.GetExecutionMessage(executionMessageId);
+										stream.Write(executionMessage, 0, executionMessage.Length);
+									}
+									else
+										throw new ApplicationException();
+								}
+								else if (message[1] == executionMessageId && message[2] == Message.Failed)
+								{
+									throw new ApplicationException();
+								}
+							}
+						} while (message[0] != Message.OutputHeader);
+
+						File.WriteAllText(LocalDir + OutputFileName, Message.ReadMessage(message));
+					}
 
 					ReadNodeStates();
 					NodeStates[nodeIndex] = idel;

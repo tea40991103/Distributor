@@ -36,8 +36,12 @@ namespace Distributor
 			string ipAddressStr;
 			int port = Tools.ParseIPEndPoint(ipEndPointStr, out ipAddressStr);
 			if (port == 0) port = DefaultPort;
-			if (ipAddressStr == "") ipAddressStr = "localhost";
-			IpEndPoint = new IPEndPoint(Dns.GetHostAddresses(ipAddressStr)[0], port);
+			if (ipAddressStr == "" || ipAddressStr == "localhost")
+			{
+				IpEndPoint = new IPEndPoint(IPAddress.Loopback, port);
+			}
+			else
+				IpEndPoint = new IPEndPoint(Dns.GetHostAddresses(ipAddressStr)[0], port);
 
 			var tabIndex2 = nodeLine.LastIndexOf(Message.Separator);
 			if (tabIndex2 == tabIndex1)
@@ -73,7 +77,7 @@ namespace Distributor
 			process.StartInfo.FileName = ExecutorPath;
 			process.StartInfo.Arguments = ArgStr;
 			process.StartInfo.UseShellExecute = false;
-			process.StartInfo.WorkingDirectory = workingDir;
+			process.StartInfo.WorkingDirectory = workingDir.TrimEnd(Path.PathSeparator);
 
 			process.Start();
 			if (!process.WaitForExit(secondsTimeout > 0 ? 1000 * secondsTimeout : -1))
@@ -89,7 +93,7 @@ namespace Distributor
 			process.StartInfo.FileName = ExecutorPath;
 			process.StartInfo.Arguments = ArgStr;
 			process.StartInfo.UseShellExecute = false;
-			process.StartInfo.WorkingDirectory = workingDir;
+			process.StartInfo.WorkingDirectory = workingDir.TrimEnd(Path.PathSeparator);
 
 			process.Start();
 			do
