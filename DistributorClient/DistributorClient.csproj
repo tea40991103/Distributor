@@ -32,9 +32,6 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="NDesk.Options, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\NDesk.Options.Redpoint.0.2.1\lib\net45\NDesk.Options.dll</HintPath>
-    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -48,6 +45,9 @@
     <Compile Include="..\Shared\Message.cs">
       <Link>Message.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\NDesk.Options.cs">
+      <Link>NDesk.Options.cs</Link>
+    </Compile>
     <Compile Include="..\Shared\Node.cs">
       <Link>Node.cs</Link>
     </Compile>
@@ -60,7 +60,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
-    <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
