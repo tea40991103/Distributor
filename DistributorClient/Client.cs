@@ -29,7 +29,7 @@ namespace Distributor
 		static string InputFileName, OutputFileName;
 		static Random PidRandom = new Random(Process.GetCurrentProcess().Id);
 
-		string _LocalDir = Directory.GetCurrentDirectory() + Path.PathSeparator;
+		string _LocalDir = Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar;
 		public string LocalDir
 		{
 			get { return _LocalDir; }
@@ -38,7 +38,7 @@ namespace Distributor
 				if (Directory.Exists(value))
 				{
 					_LocalDir = value;
-					if (_LocalDir.Last() != Path.PathSeparator) _LocalDir += Path.PathSeparator;
+					if (_LocalDir.Last() != Path.DirectorySeparatorChar) _LocalDir += Path.DirectorySeparatorChar;
 				}
 				else
 					throw new DirectoryNotFoundException();
@@ -86,7 +86,7 @@ namespace Distributor
 				NodeStatesFilePath = NodePoolFilePath + ".states";
 				try
 				{
-					if (File.Exists(NodeStatesFilePath) && File.GetLastWriteTime(NodeStatesFilePath) > File.GetLastWriteTime(NodePoolFilePath))
+					if (File.Exists(NodeStatesFilePath) && Process.GetProcessesByName(ProcessName).Length > 1)
 					{
 						ReadNodeStates();
 					}
@@ -150,9 +150,12 @@ namespace Distributor
 							await Task.Delay(5000, ExecutionCTS.Token);
 					} while (true);
 
+					var outputFilePath = LocalDir + OutputFileName;
 					if (node.IpEndPoint.Address == IPAddress.Loopback)
 					{
+						File.Delete(outputFilePath);
 						await node.Execute(ExecutionCTS.Token, secondsTimeout - sw.Elapsed.Seconds, LocalDir);
+						if (!File.Exists(outputFilePath)) throw new ApplicationException();
 					}
 					else
 					{
@@ -166,7 +169,6 @@ namespace Distributor
 						} while (!tcpClient.Connected);
 
 						stream = tcpClient.GetStream();
-						var reader = new StreamReader(stream, Encoding.Unicode);
 						string message;
 
 						var inputMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
@@ -176,24 +178,17 @@ namespace Distributor
 						var executionMessageId = ushort.MaxValue;
 						do
 						{
-							while (!stream.DataAvailable)
+							var getMessage = Message.GetMessage(stream, ExecutionCTS.Token);
+							while (!getMessage.IsCompleted && !getMessage.IsFaulted)
 							{
 								if (secondsTimeout > 0 && sw.Elapsed.Seconds >= secondsTimeout)
 									throw new TimeoutException();
 								else
-									await Task.Delay(500, ExecutionCTS.Token);
+									await Task.Delay(100);
 							}
+							if (getMessage.IsFaulted) throw new TaskCanceledException();
 
-							message = "";
-							do
-							{
-								message += reader.ReadToEnd();
-								if (secondsTimeout > 0 && sw.Elapsed.Seconds >= secondsTimeout)
-									throw new TimeoutException();
-								else
-									await Task.Delay(500, ExecutionCTS.Token);
-							} while (message.Last() != Message.MessageEnd);
-
+							message = getMessage.Result;
 							if (message[0] == Message.ResponseHeader)
 							{
 								if (message[1] == inputMessageId)
@@ -212,9 +207,9 @@ namespace Distributor
 									throw new ApplicationException();
 								}
 							}
-						} while (message[0] != Message.OutputHeader);
+						} while (message[0] != Message.OutputHeader || message[1] != inputMessageId);
 
-						File.WriteAllText(LocalDir + OutputFileName, Message.ReadMessage(message));
+						File.WriteAllText(outputFilePath, Message.ReadMessage(message));
 					}
 
 					ReadNodeStates();
@@ -258,7 +253,8 @@ namespace Distributor
 
 		public static byte[] GetCancellationMessage(ushort id = 0)
 		{
-			var messageStr = String.Format("{0}{1}{2}", Message.CancellationHeader, Convert.ToChar(id), Message.MessageEnd);
+			var messageStr = String.Format("{0}{1}{2}",
+				Message.CancellationHeader, Convert.ToChar(id), Message.MessageEnd);
 			return Encoding.Unicode.GetBytes(messageStr);
 		}
 

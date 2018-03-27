@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Distributor
@@ -22,7 +24,10 @@ namespace Distributor
 
 		public static string ReadMessage(string message, out char header, out ushort id)
 		{
-			if (String.IsNullOrEmpty(message)) throw new ArgumentNullException();
+			if (message == null)
+				throw new ArgumentNullException();
+			else if (String.IsNullOrEmpty(message))
+				throw new ArgumentException();
 
 			header = message[0];
 			id = message[1];
@@ -33,7 +38,7 @@ namespace Distributor
 			else if (i < 0)
 				message = message.Substring(2);
 			else
-				throw new ArgumentException();
+				throw new FormatException();
 
 			return message;
 		}
@@ -56,6 +61,22 @@ namespace Distributor
 			char header;
 			ushort id;
 			return ReadMessage(message, out header, out id);
+		}
+
+		public static async Task<string> GetMessage(NetworkStream stream, CancellationToken ct)
+		{
+			var buffer = new byte[1500];
+			var message = "";
+			int i;
+
+			do
+			{
+				i = await stream.ReadAsync(buffer, 0, buffer.Length, ct);
+				if (ct.IsCancellationRequested) throw new TaskCanceledException();
+				message += Encoding.Unicode.GetString(buffer, 0, i);
+			} while (message.Last() != MessageEnd);
+
+			return message;
 		}
 	}
 	

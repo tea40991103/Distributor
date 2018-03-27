@@ -22,7 +22,7 @@ namespace Distributor
 		public const int DefaultPort = 57220;
 
 		public IPEndPoint IpEndPoint;
-		string ExecutorPath, ArgStr;
+		string ExecutorPath, ArgStr = "";
 
 		public Node(string nodeLine)
 		{
@@ -31,30 +31,22 @@ namespace Distributor
 			else if (String.IsNullOrWhiteSpace(nodeLine))
 				throw new ArgumentException();
 
-			var tabIndex1 = nodeLine.IndexOf(Message.Separator);
-			var ipEndPointStr = nodeLine.Substring(0, tabIndex1);
+			var args = nodeLine.Split(Message.Separator);
 			string ipAddressStr;
-			int port = Tools.ParseIPEndPoint(ipEndPointStr, out ipAddressStr);
-			if (port == 0) port = DefaultPort;
-			if (ipAddressStr == "" || ipAddressStr == "localhost")
+			int port = Tools.ParseIPEndPoint(args[0], out ipAddressStr);
+			if (port == 0)
 			{
-				IpEndPoint = new IPEndPoint(IPAddress.Loopback, port);
+				port = DefaultPort;
+				if (ipAddressStr == "::1" || ipAddressStr == "[::1]" || ipAddressStr == "localhost")
+				{
+					IpEndPoint = new IPEndPoint(IPAddress.Loopback, port);
+				}
 			}
-			else
-				IpEndPoint = new IPEndPoint(Dns.GetHostAddresses(ipAddressStr)[0], port);
-
-			var tabIndex2 = nodeLine.LastIndexOf(Message.Separator);
-			if (tabIndex2 == tabIndex1)
-			{
-				ExecutorPath = nodeLine.Substring(tabIndex2 + 1);
-				ArgStr = "";
-			}
-			else
-			{
-				ExecutorPath = nodeLine.Substring(tabIndex1 + 1, tabIndex2 - tabIndex1 - 1);
-				ArgStr = nodeLine.Substring(tabIndex2 + 1);
-			}
-			if (String.IsNullOrWhiteSpace(ExecutorPath)) throw new FormatException();
+			IpEndPoint = new IPEndPoint(Dns.GetHostAddresses(ipAddressStr)[0], port);
+			
+			if (String.IsNullOrWhiteSpace(args[1])) throw new FormatException();
+			ExecutorPath = args[1];
+			if (args.Length > 2) ArgStr = args[2];
 		}
 
 		public Node(byte[] message) : this(Message.ReadMessage(message)) { }
@@ -77,7 +69,7 @@ namespace Distributor
 			process.StartInfo.FileName = ExecutorPath;
 			process.StartInfo.Arguments = ArgStr;
 			process.StartInfo.UseShellExecute = false;
-			process.StartInfo.WorkingDirectory = workingDir.TrimEnd(Path.PathSeparator);
+			process.StartInfo.WorkingDirectory = workingDir.TrimEnd(Path.DirectorySeparatorChar);
 
 			process.Start();
 			if (!process.WaitForExit(secondsTimeout > 0 ? 1000 * secondsTimeout : -1))
@@ -93,7 +85,7 @@ namespace Distributor
 			process.StartInfo.FileName = ExecutorPath;
 			process.StartInfo.Arguments = ArgStr;
 			process.StartInfo.UseShellExecute = false;
-			process.StartInfo.WorkingDirectory = workingDir.TrimEnd(Path.PathSeparator);
+			process.StartInfo.WorkingDirectory = workingDir.TrimEnd(Path.DirectorySeparatorChar);
 
 			process.Start();
 			do
