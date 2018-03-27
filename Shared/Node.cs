@@ -34,15 +34,11 @@ namespace Distributor
 			var args = nodeLine.Split(Message.Separator);
 			string ipAddressStr;
 			int port = Tools.ParseIPEndPoint(args[0], out ipAddressStr);
-			if (port == 0)
-			{
-				port = DefaultPort;
-				if (ipAddressStr == "::1" || ipAddressStr == "[::1]" || ipAddressStr == "localhost")
-				{
-					IpEndPoint = new IPEndPoint(IPAddress.Loopback, port);
-				}
-			}
-			IpEndPoint = new IPEndPoint(Dns.GetHostAddresses(ipAddressStr)[0], port);
+			if (port == 0) port = DefaultPort;
+			if (ipAddressStr == "localhost")
+				IpEndPoint = new IPEndPoint(IPAddress.Loopback, port);
+			else
+				IpEndPoint = new IPEndPoint(Dns.GetHostAddresses(ipAddressStr)[0], port);
 			
 			if (String.IsNullOrWhiteSpace(args[1])) throw new FormatException();
 			ExecutorPath = args[1];
