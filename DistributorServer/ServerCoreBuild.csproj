@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>DistributorServer</AssemblyName>
+    <PackageId>DistributorServer</PackageId>
+  </PropertyGroup>
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>netcoreapp2.0;net461</TargetFrameworks>
+  </PropertyGroup>
+  <PropertyGroup>
+    <RuntimeFrameworkVersion>2.0.6</RuntimeFrameworkVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\Shared\*.cs" />
+    <Compile Remove="Properties\*.cs" />
+  </ItemGroup>
+</Project>
