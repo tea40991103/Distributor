@@ -68,4 +68,7 @@
   <PropertyGroup>
     <PostBuildEvent>"$(ProjectDir)RemoteDebug"</PostBuildEvent>
   </PropertyGroup>
+  <PropertyGroup>
+    <PreBuildEvent>del "$(ProjectDir)obj\project.assets.json"</PreBuildEvent>
+  </PropertyGroup>
 </Project>

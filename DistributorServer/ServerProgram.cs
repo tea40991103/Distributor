@@ -10,7 +10,7 @@ namespace Distributor
 {
 	class ServerProgram
 	{
-		const string Version = "0.1.0";
+		const string Version = "0.1.1";
 
 		static void Main(string[] args)
 		{
@@ -57,11 +57,13 @@ namespace Distributor
 			{
 				Console.Write("{0}: ", Server.ProcessName);
 				Console.WriteLine(ex.InnerException.Message);
+				throw ex.InnerException;
 			}
 			catch (Exception ex)
 			{
 				Console.Write("{0}: ", Server.ProcessName);
 				Console.WriteLine(ex.Message);
+				throw ex;
 			}
 		}
 

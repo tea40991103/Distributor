@@ -74,7 +74,6 @@ namespace Distributor
 				try
 				{
 					var nodeLines = Tools.IsAnsiEncoding(NodePoolFilePath) ? File.ReadAllLines(NodePoolFilePath, Encoding.Default) : File.ReadAllLines(NodePoolFilePath);
-					File.SetAttributes(NodePoolFilePath, FileAttributes.ReadOnly);
 					foreach (var nodeLine in nodeLines) try { NodePool.Add(new Node(nodeLine)); } catch { }
 				}
 				catch (Exception ex)
@@ -86,7 +85,7 @@ namespace Distributor
 				NodeStatesFilePath = NodePoolFilePath + ".states";
 				try
 				{
-					if (File.Exists(NodeStatesFilePath) && Process.GetProcessesByName(ProcessName).Length > 1)
+					if (File.Exists(NodeStatesFilePath) && File.GetLastWriteTime(NodeStatesFilePath) > File.GetLastWriteTime(NodePoolFilePath))
 					{
 						ReadNodeStates();
 					}
@@ -121,13 +120,11 @@ namespace Distributor
 
 				var tcpClient = new TcpClient(AddressFamily.InterNetworkV6);
 				tcpClient.Client.DualMode = true;
-				NetworkStream stream = null;
 				try
 				{
 					var sw = new Stopwatch();
 					Node node = null;
 					int nodeIndex;
-					var idel = (byte)NodeState.Idel;
 
 					await Task.Delay(PidRandom.Next(1000 * NodeCount), ExecutionCTS.Token);
 					sw.Start();
@@ -135,7 +132,7 @@ namespace Distributor
 					{
 						ReadNodeStates();
 						for (nodeIndex = 0; nodeIndex < NodeCount; ++nodeIndex)
-							if (NodeStates[nodeIndex] == idel)
+							if (NodeStates[nodeIndex] == (byte)NodeState.Idel)
 							{
 								node = NodePool[nodeIndex];
 								NodeStates[nodeIndex] = (byte)NodeState.Busy;
@@ -154,8 +151,17 @@ namespace Distributor
 					if (node.IpEndPoint.Address == IPAddress.Loopback)
 					{
 						File.Delete(outputFilePath);
-						await node.Execute(ExecutionCTS.Token, secondsTimeout - sw.Elapsed.Seconds, LocalDir);
+						try
+						{
+							await node.Execute(ExecutionCTS.Token, secondsTimeout - sw.Elapsed.Seconds, LocalDir);
+						}
+						catch (Exception ex)
+						{
+							if (ex is TimeoutException || ex is TaskCanceledException) SetNodeState(nodeIndex, NodeState.Idel);
+							throw ex;
+						}
 						if (!File.Exists(outputFilePath)) throw new ApplicationException();
+						SetNodeState(nodeIndex, NodeState.Idel);
 					}
 					else
 					{
@@ -168,67 +174,68 @@ namespace Distributor
 								await Task.Delay(500, ExecutionCTS.Token);
 						} while (!tcpClient.Connected);
 
-						stream = tcpClient.GetStream();
-						string message;
-
-						var inputMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
-						var inputMessage = GetInputMessage(inputMessageId);
-						stream.WriteAsync(inputMessage, 0, inputMessage.Length);
-
-						var executionMessageId = ushort.MaxValue;
-						do
+						using (var stream = tcpClient.GetStream())
 						{
-							var getMessage = Message.GetMessage(stream, ExecutionCTS.Token);
-							while (!getMessage.IsCompleted && !getMessage.IsFaulted)
-							{
-								if (secondsTimeout > 0 && sw.Elapsed.Seconds >= secondsTimeout)
-									throw new TimeoutException();
-								else
-									await Task.Delay(100);
-							}
-							if (getMessage.IsFaulted) throw new TaskCanceledException();
+							string message;
 
-							message = getMessage.Result;
-							if (message[0] == Message.ResponseHeader)
+							var inputMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
+							var inputMessage = GetInputMessage(inputMessageId);
+							stream.WriteAsync(inputMessage, 0, inputMessage.Length);
+
+							var executionMessageId = ushort.MaxValue;
+							try
 							{
-								if (message[1] == inputMessageId)
+								do
 								{
-									if (message[2] == Message.Successful)
+									var getMessage = Message.GetMessage(stream, ExecutionCTS.Token);
+									while (!getMessage.IsCompleted && !getMessage.IsFaulted)
 									{
-										executionMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
-										var executionMessage = node.GetExecutionMessage(executionMessageId);
-										stream.Write(executionMessage, 0, executionMessage.Length);
+										if (secondsTimeout > 0 && sw.Elapsed.Seconds >= secondsTimeout)
+											throw new TimeoutException();
+										else
+											await Task.Delay(100);
 									}
-									else
-										throw new ApplicationException();
-								}
-								else if (message[1] == executionMessageId && message[2] == Message.Failed)
-								{
-									throw new ApplicationException();
-								}
+									if (getMessage.IsFaulted) throw new TaskCanceledException();
+
+									message = getMessage.Result;
+									if (message[0] == Message.ResponseHeader)
+									{
+										if (message[1] == inputMessageId)
+										{
+											if (message[2] == Message.Successful)
+											{
+												executionMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
+												var executionMessage = node.GetExecutionMessage(executionMessageId);
+												stream.Write(executionMessage, 0, executionMessage.Length);
+											}
+											else
+												throw new ApplicationException();
+										}
+										else if (message[1] == executionMessageId && message[2] == Message.Failed)
+										{
+											throw new ApplicationException();
+										}
+									}
+								} while (message[0] != Message.OutputHeader || message[1] != inputMessageId);
 							}
-						} while (message[0] != Message.OutputHeader || message[1] != inputMessageId);
-
-						File.WriteAllText(outputFilePath, Message.ReadMessage(message));
+							catch (Exception ex)
+							{
+								if (executionMessageId != ushort.MaxValue)
+								{
+									var cancellationMessage = GetCancellationMessage(executionMessageId);
+									stream.Write(cancellationMessage, 0, cancellationMessage.Length);
+								}
+								if (ex is TimeoutException || ex is TaskCanceledException) SetNodeState(nodeIndex, NodeState.Idel);
+								throw ex;
+							}
+							SetNodeState(nodeIndex, NodeState.Idel);
+							File.WriteAllText(outputFilePath, Message.ReadMessage(message));
+						}
 					}
-
-					ReadNodeStates();
-					NodeStates[nodeIndex] = idel;
-					WriteNodeStates();
 					return nodeIndex;
-				}
-				catch (Exception ex)
-				{
-					if (tcpClient.Connected)
-					{
-						var cancellationMessage = GetCancellationMessage();
-						stream.Write(cancellationMessage, 0, cancellationMessage.Length);
-					}
-					throw ex;
 				}
 				finally
 				{
-					if (stream != null) stream.Close();
 					tcpClient.Close();
 					ExecutionCTS = null;
 				}
@@ -268,7 +275,6 @@ namespace Distributor
 			NodePool.Clear();
 			if (File.Exists(NodePoolFilePath) && Process.GetProcessesByName(ProcessName).Length == 1)
 			{
-				File.SetAttributes(NodePoolFilePath, FileAttributes.Normal);
 				File.Delete(NodeStatesFilePath);
 			}
 		}
@@ -297,6 +303,15 @@ namespace Distributor
 				Thread.Sleep(500);
 				File.WriteAllBytes(NodeStatesFilePath, NodeStates);
 			}
+		}
+
+		static void SetNodeState(int nodeIndex, NodeState nodeState)
+		{
+			if (nodeIndex < 0 || nodeIndex >= NodeCount) throw new ArgumentOutOfRangeException();
+
+			ReadNodeStates();
+			NodeStates[nodeIndex] = (byte)nodeState;
+			WriteNodeStates();
 		}
 	}
 

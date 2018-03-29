@@ -161,12 +161,21 @@ namespace Distributor
 							else if (message[0] == Message.ExecutionHeader && execution == null && executionCTS != null)
 							{
 								executionMessageId = message[1];
-								node = new Node(Message.ReadMessage(message));
-								node.IpEndPoint = (IPEndPoint)tcpClient.Client.RemoteEndPoint;
-								File.Delete(LocalDir + OutputFileName);
-								execution = node.Execute(executionCTS.Token, ExeSecondsTimeout, LocalDir);
+								try
+								{
+									node = new Node(Message.ReadMessage(message));
+									node.IpEndPoint = (IPEndPoint)tcpClient.Client.RemoteEndPoint;
+									File.Delete(LocalDir + OutputFileName);
+									execution = node.Execute(executionCTS.Token, ExeSecondsTimeout, LocalDir);
+								}
+								catch
+								{
+									var responseMessage = GetResponseMessage(executionMessageId, Message.Failed);
+									stream.Write(responseMessage, 0, responseMessage.Length);
+									break;
+								}
 							}
-							else if (message[0] == Message.CancellationHeader && execution != null)
+							else if (message[0] == Message.CancellationHeader && message[1] == executionMessageId)
 							{
 								executionCTS.Cancel();
 							}
