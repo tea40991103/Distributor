@@ -21,6 +21,7 @@ namespace Distributor
 		public const char NodeIsBusy = '\u0014';
 		public const char Separator = '\t';
 		public const char MessageEnd = '\u0099';
+		public readonly static byte[] KeepAlive = Encoding.Unicode.GetBytes("\u0084" + MessageEnd);
 
 		public static string ReadMessage(string message, out char header, out ushort id)
 		{

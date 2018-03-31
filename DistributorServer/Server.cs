@@ -111,9 +111,15 @@ namespace Distributor
 						{
 							while (!stream.DataAvailable)
 							{
+								try
+								{
+									stream.Write(Message.KeepAlive, 0, Message.KeepAlive.Length);
+								}
+								catch { break; }
 								if (execution != null && (execution.IsCompleted || execution.IsFaulted)) break;
-								await Task.Delay(500, ListeningCTS.Token);
+								await Task.Delay(1000, ListeningCTS.Token);
 							}
+							if (!tcpClient.Connected) break;
 							if (execution != null && execution.IsCompleted)
 							{
 								try

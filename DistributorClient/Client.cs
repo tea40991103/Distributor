@@ -111,6 +111,8 @@ namespace Distributor
 
 		public async Task<int> Connect(int secondsTimeout = -1)
 		{
+			var nodeIndex = -1;
+
 			if (NodeCount > 0)
 			{
 				if (ExecutionCTS != null)
@@ -122,46 +124,35 @@ namespace Distributor
 				tcpClient.Client.DualMode = true;
 				try
 				{
-					var sw = new Stopwatch();
 					Node node = null;
-					int nodeIndex;
 
 					await Task.Delay(PidRandom.Next(1000 * NodeCount), ExecutionCTS.Token);
-					sw.Start();
 					do
 					{
 						ReadNodeStates();
-						for (nodeIndex = 0; nodeIndex < NodeCount; ++nodeIndex)
-							if (NodeStates[nodeIndex] == (byte)NodeState.Idel)
+						for (int i = 0; i < NodeCount; ++i)
+							if (NodeStates[i] == (byte)NodeState.Idel)
 							{
-								node = NodePool[nodeIndex];
-								NodeStates[nodeIndex] = (byte)NodeState.Busy;
+								nodeIndex = i;
+								node = NodePool[i];
+								NodeStates[i] = (byte)NodeState.Busy;
 								WriteNodeStates();
 								break;
 							}
 						if (node != null)
 							break;
-						else if (secondsTimeout > 0 && sw.Elapsed.Seconds >= secondsTimeout)
-							throw new TimeoutException();
 						else
 							await Task.Delay(5000, ExecutionCTS.Token);
 					} while (true);
 
 					var outputFilePath = LocalDir + OutputFileName;
+					var sw = new Stopwatch();
+					sw.Start();
 					if (node.IpEndPoint.Address == IPAddress.Loopback)
 					{
 						File.Delete(outputFilePath);
-						try
-						{
-							await node.Execute(ExecutionCTS.Token, secondsTimeout - sw.Elapsed.Seconds, LocalDir);
-						}
-						catch (Exception ex)
-						{
-							if (ex is TimeoutException || ex is TaskCanceledException) SetNodeState(nodeIndex, NodeState.Idel);
-							throw ex;
-						}
+						await node.Execute(ExecutionCTS.Token, secondsTimeout - sw.Elapsed.Seconds, LocalDir);
 						if (!File.Exists(outputFilePath)) throw new ApplicationException();
-						SetNodeState(nodeIndex, NodeState.Idel);
 					}
 					else
 					{
@@ -225,23 +216,21 @@ namespace Distributor
 									var cancellationMessage = GetCancellationMessage(executionMessageId);
 									stream.Write(cancellationMessage, 0, cancellationMessage.Length);
 								}
-								if (ex is TimeoutException || ex is TaskCanceledException) SetNodeState(nodeIndex, NodeState.Idel);
 								throw ex;
 							}
-							SetNodeState(nodeIndex, NodeState.Idel);
 							File.WriteAllText(outputFilePath, Message.ReadMessage(message));
 						}
 					}
-					return nodeIndex;
 				}
 				finally
 				{
+					if (nodeIndex >= 0) SetNodeState(nodeIndex, NodeState.Idel);
 					tcpClient.Close();
 					ExecutionCTS = null;
 				}
 			}
-			else
-				return -1;
+
+			return nodeIndex;
 		}
 
 		public byte[] GetInputMessage(ushort id = 0)
