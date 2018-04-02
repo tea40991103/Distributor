@@ -113,13 +113,18 @@ namespace Distributor
 							{
 								try
 								{
-									stream.Write(Message.KeepAlive, 0, Message.KeepAlive.Length);
+									var nodeState = executionCTS == null ? Message.NodeIsIdelResponse : Message.NodeIsBusyResponse;
+									stream.Write(nodeState, 0, nodeState.Length);
 								}
 								catch { break; }
 								if (execution != null && (execution.IsCompleted || execution.IsFaulted)) break;
 								await Task.Delay(1000, ListeningCTS.Token);
 							}
-							if (!tcpClient.Connected) break;
+							if (!tcpClient.Connected)
+							{
+								if (execution != null) executionCTS.Cancel();
+								break;
+							}
 							if (execution != null && execution.IsCompleted)
 							{
 								try
@@ -142,7 +147,7 @@ namespace Distributor
 							}
 
 							var message = await Message.GetMessage(stream, ListeningCTS.Token);
-							if (message[0] == Message.InputHeader)
+							if (message[0] == Message.InputHeader && executionCTS == null)
 							{
 								inputMessageId = message[1];
 								try
@@ -184,6 +189,7 @@ namespace Distributor
 							else if (message[0] == Message.CancellationHeader && message[1] == executionMessageId)
 							{
 								executionCTS.Cancel();
+								break;
 							}
 						}
 					}
