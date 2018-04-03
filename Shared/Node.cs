@@ -71,7 +71,7 @@ namespace Distributor
 			if (!process.WaitForExit(secondsTimeout > 0 ? 1000 * secondsTimeout : -1))
 			{
 				process.Kill();
-				throw new TimeoutException();
+				throw new TimeoutException("Local execution timeout");
 			}
 		}
 
@@ -98,7 +98,7 @@ namespace Distributor
 				if (--secondsTimeout == 0)
 				{
 					process.Kill();
-					throw new TimeoutException();
+					throw new TimeoutException("Local execution timeout");
 				}
 			} while (!process.HasExited);
 		}

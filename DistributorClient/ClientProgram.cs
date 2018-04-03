@@ -10,7 +10,7 @@ namespace Distributor
 {
 	class ClientProgram
 	{
-		const string Version = "0.1.1";
+		const string Version = "0.1.2";
 
 		static void Main(string[] args)
 		{

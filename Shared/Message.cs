@@ -13,16 +13,18 @@ namespace Distributor
 		public const char InputHeader = '\u0080';
 		public const char OutputHeader = '\u0081';
 		public const char ExecutionHeader = '\u0091';
-		public const char CancellationHeader = '\u0092';
+		public const char TerminationHeader = '\u0092';
 		public const char ResponseHeader = '\u0010';
 		public const char Successful = '\u0011';
 		public const char Failed = '\u0012';
 		public const char NodeIsIdel = '\u0013';
 		public const char NodeIsBusy = '\u0014';
+		public const char DefaultId = '\u0000';
 		public const char Separator = '\t';
 		public const char MessageEnd = '\u0099';
-		public readonly static byte[] NodeIsIdelResponse = Encoding.Unicode.GetBytes("\u0010\u0000" + NodeIsIdel + MessageEnd);
-		public readonly static byte[] NodeIsBusyResponse = Encoding.Unicode.GetBytes("\u0010\u0000" + NodeIsBusy + MessageEnd);
+		public readonly static byte[] TerminationMessage = Encoding.Unicode.GetBytes(TerminationHeader + "\u0000" + MessageEnd);
+		public readonly static byte[] NodeIsIdelResponse = Encoding.Unicode.GetBytes(ResponseHeader + "\u0000" + NodeIsIdel + MessageEnd);
+		public readonly static byte[] NodeIsBusyResponse = Encoding.Unicode.GetBytes(ResponseHeader + "\u0000" + NodeIsBusy + MessageEnd);
 
 		public static string ReadMessage(string message, out char header, out ushort id)
 		{

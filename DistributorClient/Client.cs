@@ -152,7 +152,7 @@ namespace Distributor
 					{
 						File.Delete(outputFilePath);
 						await node.Execute(ExecutionCTS.Token, secondsTimeout, LocalDir);
-						if (!File.Exists(outputFilePath)) throw new ApplicationException();
+						if (!File.Exists(outputFilePath)) throw new ApplicationException("Local execution failure");
 					}
 					else
 					{
@@ -162,7 +162,7 @@ namespace Distributor
 						do
 						{
 							if (sw.Elapsed.TotalSeconds >= 60)
-								throw new SocketException();
+								throw new TimeoutException("Connection timeout");
 							else
 							{
 								await Task.Delay(500, ExecutionCTS.Token);
@@ -170,75 +170,65 @@ namespace Distributor
 							}
 						} while (!connect.IsCompleted);
 
-						using (var stream = tcpClient.GetStream())
-						{
-							string message;
+						var stream = tcpClient.GetStream();
+						var inputMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
+						var inputMessage = GetInputMessage(inputMessageId);
+						var executionMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
+						var executionMessage = node.GetExecutionMessage(executionMessageId);
+						var sw2 = new Stopwatch();
 
-							var inputMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
-							var inputMessage = GetInputMessage(inputMessageId);
-							var executionMessageId = ushort.MaxValue;
-							var sw2 = new Stopwatch();
+						try
+						{
+							while (true)
+							{
+								var getMessage = Message.GetMessage(stream, ExecutionCTS.Token);
+								sw.Restart();
+								while (!getMessage.IsCompleted && !getMessage.IsFaulted)
+								{
+									if (sw.Elapsed.TotalSeconds >= 30)
+										throw new TimeoutException("Connection lost");
+									else if (secondsTimeout > 0 && sw2.Elapsed.TotalSeconds >= secondsTimeout)
+										throw new TimeoutException("Remote execution timeout");
+									else
+										await Task.Delay(100);
+								}
+								if (getMessage.IsFaulted) throw new TaskCanceledException();
+
+								var message = getMessage.Result;
+								if (message[1] != Message.DefaultId && message[1] != inputMessageId && message[1] != executionMessageId)
+									throw new ApplicationException("Unexpected response");
+								else if (message[0] == Message.ResponseHeader)
+								{
+									if (message[2] == Message.NodeIsIdel)
+									{
+										stream.Write(inputMessage, 0, inputMessage.Length);
+									}
+									else if (message[1] == inputMessageId)
+									{
+										if (message[2] == Message.Successful)
+										{
+											stream.Write(executionMessage, 0, executionMessage.Length);
+											sw2.Start();
+										}
+										else
+											throw new ApplicationException("Remote input file creation failure");
+									}
+									else if (message[1] == executionMessageId && message[2] == Message.Failed)
+										throw new ApplicationException("Remote execution failure");
+								}
+								else if (message[0] == Message.OutputHeader)
+								{
+									File.WriteAllText(outputFilePath, Message.ReadMessage(message));
+									break;
+								}
+							}
+						}
+						finally
+						{
 							try
 							{
-								while (true)
-								{
-									var getMessage = Message.GetMessage(stream, ExecutionCTS.Token);
-									sw.Restart();
-									while (!getMessage.IsCompleted && !getMessage.IsFaulted)
-									{
-										if (sw.Elapsed.TotalSeconds >= 30)
-											throw new SocketException();
-										else if (secondsTimeout > 0 && sw2.Elapsed.TotalSeconds >= secondsTimeout)
-											throw new TimeoutException();
-										else
-											await Task.Delay(100);
-									}
-									if (getMessage.IsFaulted) throw new TaskCanceledException();
-
-									message = getMessage.Result;
-									if (message[0] == Message.ResponseHeader)
-									{
-										if (message[2] == Message.NodeIsIdel)
-										{
-											stream.Write(inputMessage, 0, inputMessage.Length);
-										}
-										else if (message[1] == inputMessageId)
-										{
-											if (message[2] == Message.Successful && executionMessageId == ushort.MaxValue)
-											{
-												executionMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
-												var executionMessage = node.GetExecutionMessage(executionMessageId);
-												stream.Write(executionMessage, 0, executionMessage.Length);
-												sw2.Start();
-											}
-											else
-												throw new ApplicationException();
-										}
-										else if (message[1] == executionMessageId && message[2] == Message.Failed)
-										{
-											throw new ApplicationException();
-										}
-									}
-									else if (message[0] == Message.OutputHeader && message[1] == inputMessageId)
-									{
-										File.WriteAllText(outputFilePath, Message.ReadMessage(message));
-										break;
-									}
-								}
-							}
-							catch (Exception ex)
-							{
-								if (executionMessageId != ushort.MaxValue)
-								{
-									try
-									{
-										var cancellationMessage = GetCancellationMessage(executionMessageId);
-										stream.Write(cancellationMessage, 0, cancellationMessage.Length);
-									}
-									catch { }
-								}
-								throw ex;
-							}
+								stream.Write(Message.TerminationMessage, 0, Message.TerminationMessage.Length);
+							} catch { }
 						}
 					}
 				}
@@ -267,13 +257,6 @@ namespace Distributor
 			return Encoding.Unicode.GetBytes(messageStr);
 		}
 
-		public static byte[] GetCancellationMessage(ushort id = 0)
-		{
-			var messageStr = String.Format("{0}{1}{2}",
-				Message.CancellationHeader, Convert.ToChar(id), Message.MessageEnd);
-			return Encoding.Unicode.GetBytes(messageStr);
-		}
-
 		public void Cancel()
 		{
 			if (ExecutionCTS != null) ExecutionCTS.Cancel();
@@ -282,7 +265,7 @@ namespace Distributor
 		public static void ClearNodePool()
 		{
 			NodePool.Clear();
-			if (File.Exists(NodePoolFilePath) && Process.GetProcessesByName(ProcessName).Length == 1)
+			if (File.Exists(NodeStatesFilePath) && Process.GetProcessesByName(ProcessName).Length == 1)
 			{
 				File.Delete(NodeStatesFilePath);
 			}
