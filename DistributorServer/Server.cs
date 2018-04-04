@@ -53,7 +53,6 @@ namespace Distributor
 				ListeningCTS = new CancellationTokenSource();
 
 			TcpListener tcpListener = null, tcpListenerIPv6 = null;
-			TcpClient tcpClient = null;
 			try
 			{
 				string ipAddressStr;
@@ -75,132 +74,146 @@ namespace Distributor
 
 				tcpListener.Start();
 				if (tcpListenerIPv6 != null) tcpListenerIPv6.Start();
+
+				var inputMessageId = ushort.MaxValue;
+				var executionMessageId = ushort.MaxValue;
+				var response = Message.NodeIsIdelResponse;
+				Node node;
+				Task execution = null;
+				CancellationTokenSource executionCTS = null;
+				var sw = new Stopwatch();
+				var sw2 = new Stopwatch();
+
+				TcpClient tcpClient = null;
 				while (true)
 				{
-					Task<TcpClient> listening, listeningIPv6 = null;
-					listening = tcpListener.AcceptTcpClientAsync();
-					if (tcpListenerIPv6 != null) listeningIPv6 = tcpListenerIPv6.AcceptTcpClientAsync();
-
-					while (true)
+					try
 					{
-						if (listening.IsCompleted)
-						{
-							tcpClient = listening.Result;
-							break;
-						}
-						else if (listeningIPv6 != null && listeningIPv6.IsCompleted)
-						{
-							tcpClient = listeningIPv6.Result;
-							break;
-						}
-						else if ((listening.IsFaulted && listeningIPv6 == null)
-							|| (listening.IsFaulted && listeningIPv6.IsFaulted))
-							throw new SocketException();
-						else
-							await Task.Delay(500, ListeningCTS.Token);
-					}
+						Task<TcpClient> listening, listeningIPv6 = null;
+						listening = tcpListener.AcceptTcpClientAsync();
+						if (tcpListenerIPv6 != null) listeningIPv6 = tcpListenerIPv6.AcceptTcpClientAsync();
 
-					var stream = tcpClient.GetStream();
-					var inputMessageId = ushort.MaxValue;
-					var executionMessageId = ushort.MaxValue;
-					var response = Message.NodeIsIdelResponse;
-					Node node;
-					Task execution = null;
-					CancellationTokenSource executionCTS = null;
-
-					while (true)
-					{
-						while (!stream.DataAvailable)
+						sw.Restart();
+						while (true)
 						{
-							try
+							if (listening.IsCompleted)
+							{
+								tcpClient = listening.Result;
+								break;
+							}
+							else if (listeningIPv6 != null && listeningIPv6.IsCompleted)
+							{
+								tcpClient = listeningIPv6.Result;
+								break;
+							}
+							else if ((listening.IsFaulted && listeningIPv6 == null)
+								|| (listening.IsFaulted && listeningIPv6.IsFaulted))
+								throw new SocketException();
+							else if ((ExeSecondsTimeout <= 0 && sw.Elapsed.TotalSeconds >= 60)
+								|| (ExeSecondsTimeout > 0 && sw2.Elapsed.TotalSeconds >= ExeSecondsTimeout))
+								throw new TimeoutException();
+							else
+								await Task.Delay(500, ListeningCTS.Token);
+						}
+
+						var stream = tcpClient.GetStream();
+						while (true)
+						{
+							while (!stream.DataAvailable)
 							{
 								stream.Write(response, 0, response.Length);
 								await Task.Delay(2000, ListeningCTS.Token);
+								if (execution != null && (execution.IsCompleted || execution.IsFaulted)) break;
 							}
-							catch (Exception ex)
+							if (execution != null && execution.IsCompleted)
 							{
-								if (execution != null && executionCTS != null) executionCTS.Cancel();
-								if (ex is TaskCanceledException) throw ex;
-								break;
+								try
+								{
+									response = GetOutputMessage(inputMessageId);
+								}
+								catch
+								{
+									response = GetResponseMessage(executionMessageId, Message.Failed);
+								}
+								execution = null;
+								continue;
 							}
-							if (execution != null && (execution.IsCompleted || execution.IsFaulted)) break;
-						}
-						if (!tcpClient.Connected) break;
-						if (execution != null && execution.IsCompleted)
-						{
-							try
-							{
-								response = GetOutputMessage(inputMessageId);
-							}
-							catch
-							{
-								response = GetResponseMessage(executionMessageId, Message.Failed);
-							}
-							execution = null;
-							continue;
-						}
-						else if (execution != null && execution.IsFaulted)
-						{
-							response = GetResponseMessage(executionMessageId, Message.Failed);
-							execution = null;
-							continue;
-						}
-
-						string message;
-						try
-						{
-							message = await Message.GetMessage(stream, ListeningCTS.Token);
-						}
-						catch (Exception ex)
-						{
-							if (execution != null && executionCTS != null) executionCTS.Cancel();
-							if (ex is TaskCanceledException) throw ex;
-							break;
-						}
-
-						if (message[0] == Message.InputHeader && executionCTS == null)
-						{
-							inputMessageId = message[1];
-							try
-							{
-								ReadInputMessage(message);
-								response = GetResponseMessage(inputMessageId, Message.Successful);
-								executionCTS = new CancellationTokenSource();
-							}
-							catch
-							{
-								response = GetResponseMessage(inputMessageId, Message.Failed);
-							}
-						}
-						else if (message[0] == Message.ExecutionHeader && execution == null && executionCTS != null)
-						{
-							executionMessageId = message[1];
-							try
-							{
-								node = new Node(Message.ReadMessage(message));
-								node.IpEndPoint = (IPEndPoint)tcpClient.Client.RemoteEndPoint;
-								File.Delete(LocalDir + OutputFileName);
-								execution = node.Execute(executionCTS.Token, ExeSecondsTimeout, LocalDir);
-								response = Message.NodeIsBusyResponse;
-							}
-							catch
+							else if (execution != null && execution.IsFaulted)
 							{
 								response = GetResponseMessage(executionMessageId, Message.Failed);
 								execution = null;
+								continue;
+							}
+
+							var message = await Message.GetMessage(stream, ListeningCTS.Token);
+							if (message[0] == Message.InputHeader && executionCTS == null)
+							{
+								inputMessageId = message[1];
+								try
+								{
+									ReadInputMessage(message);
+									response = GetResponseMessage(inputMessageId, Message.Successful);
+									executionCTS = new CancellationTokenSource();
+								}
+								catch
+								{
+									response = GetResponseMessage(inputMessageId, Message.Failed);
+								}
+							}
+							else if (message[0] == Message.ExecutionHeader && execution == null && executionCTS != null)
+							{
+								executionMessageId = message[1];
+								try
+								{
+									node = new Node(Message.ReadMessage(message));
+									node.IpEndPoint = (IPEndPoint)tcpClient.Client.RemoteEndPoint;
+									File.Delete(LocalDir + OutputFileName);
+									execution = node.Execute(executionCTS.Token, ExeSecondsTimeout, LocalDir);
+									sw2.Start();
+									response = Message.NodeIsBusyResponse;
+								}
+								catch
+								{
+									response = GetResponseMessage(executionMessageId, Message.Failed);
+								}
+							}
+							else if (message[0] == Message.TerminationHeader)
+							{
+								if (execution != null && executionCTS != null) executionCTS.Cancel();
+								sw2.Reset();
+								inputMessageId = executionMessageId = ushort.MaxValue;
+								response = Message.NodeIsIdelResponse;
+								execution = null;
+								executionCTS = null;
+								break;
 							}
 						}
-						else if (message[0] == Message.TerminationHeader)
+					}
+					catch (Exception ex)
+					{
+						if (ex is TimeoutException)
 						{
 							if (execution != null && executionCTS != null) executionCTS.Cancel();
-							break;
+							sw2.Reset();
+							inputMessageId = executionMessageId = ushort.MaxValue;
+							response = Message.NodeIsIdelResponse;
+							execution = null;
+							executionCTS = null;
+						}
+						else if (ex is SocketException || ex is TaskCanceledException)
+						{
+							if (execution != null && executionCTS != null) executionCTS.Cancel();
+							throw ex;
 						}
 					}
-					tcpClient.Close();
+					finally
+					{
+						tcpClient.Close();
+					}
 				}
 			}
 			finally
 			{
-				if (tcpClient != null) tcpClient.Close();
 				if (tcpListener != null) tcpListener.Stop();
 				if (tcpListenerIPv6 != null) tcpListenerIPv6.Stop();
 				ListeningCTS = null;

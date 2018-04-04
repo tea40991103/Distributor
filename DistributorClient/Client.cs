@@ -86,8 +86,8 @@ namespace Distributor
 				try
 				{
 					if (File.Exists(NodeStatesFilePath)
-						&& File.GetLastWriteTime(NodeStatesFilePath) > File.GetLastWriteTime(NodePoolFilePath)
-						&& Process.GetProcessesByName(ProcessName).Length > 1)
+						&& File.GetLastWriteTime(NodeStatesFilePath) > File.GetLastWriteTime(NodePoolFilePath))
+						//&& Process.GetProcessesByName(ProcessName).Length > 1)
 					{
 						ReadNodeStates();
 					}
@@ -113,8 +113,6 @@ namespace Distributor
 
 		public async Task<int> Connect(int secondsTimeout = -1)
 		{
-			var nodeIndex = -1;
-
 			if (NodeCount > 0)
 			{
 				if (ExecutionCTS != null)
@@ -122,14 +120,13 @@ namespace Distributor
 				else
 					ExecutionCTS = new CancellationTokenSource();
 
-				var tcpClient = new TcpClient(AddressFamily.InterNetworkV6);
-				tcpClient.Client.DualMode = true;
+				var nodeIndex = -1;
 				try
 				{
-					Node node = null;
-
 					await Task.Delay(PidRandom.Next(1000 * NodeCount), ExecutionCTS.Token);
-					do
+
+					Node node = null;
+					while (true)
 					{
 						ReadNodeStates();
 						for (int i = 0; i < NodeCount; ++i)
@@ -145,102 +142,143 @@ namespace Distributor
 							break;
 						else
 							await Task.Delay(5000, ExecutionCTS.Token);
-					} while (true);
+					}
 
 					var outputFilePath = LocalDir + OutputFileName;
 					if (node.IpEndPoint.Address == IPAddress.Loopback)
 					{
-						File.Delete(outputFilePath);
-						await node.Execute(ExecutionCTS.Token, secondsTimeout, LocalDir);
-						if (!File.Exists(outputFilePath)) throw new ApplicationException("Local execution failure");
+						try
+						{
+							File.Delete(outputFilePath);
+							await node.Execute(ExecutionCTS.Token, secondsTimeout, LocalDir);
+							if (!File.Exists(outputFilePath)) throw new ApplicationException("Local execution failure");
+							SetNodeState(nodeIndex, NodeState.Idel);
+						}
+						catch (Exception ex)
+						{
+							if (!(ex is InvalidOperationException) && !(ex is System.ComponentModel.Win32Exception))
+								SetNodeState(nodeIndex, NodeState.Idel);
+							throw ex;
+						}
 					}
 					else
 					{
-						var sw = new Stopwatch();
-						var connect = tcpClient.ConnectAsync(node.IpEndPoint.Address, node.IpEndPoint.Port);
-						sw.Start();
-						do
-						{
-							if (sw.Elapsed.TotalSeconds >= 60)
-								throw new TimeoutException("Connection timeout");
-							else
-							{
-								await Task.Delay(500, ExecutionCTS.Token);
-								if (connect.IsFaulted) connect = tcpClient.ConnectAsync(node.IpEndPoint.Address, node.IpEndPoint.Port);
-							}
-						} while (!connect.IsCompleted);
-
-						var stream = tcpClient.GetStream();
 						var inputMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
-						var inputMessage = GetInputMessage(inputMessageId);
 						var executionMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
-						var executionMessage = node.GetExecutionMessage(executionMessageId);
-						var sw2 = new Stopwatch();
-
+						byte[] inputMessage = null, executionMessage = null;
 						try
 						{
-							while (true)
-							{
-								var getMessage = Message.GetMessage(stream, ExecutionCTS.Token);
-								sw.Restart();
-								while (!getMessage.IsCompleted && !getMessage.IsFaulted)
-								{
-									if (sw.Elapsed.TotalSeconds >= 30)
-										throw new TimeoutException("Connection lost");
-									else if (secondsTimeout > 0 && sw2.Elapsed.TotalSeconds >= secondsTimeout)
-										throw new TimeoutException("Remote execution timeout");
-									else
-										await Task.Delay(100);
-								}
-								if (getMessage.IsFaulted) throw new TaskCanceledException();
-
-								var message = getMessage.Result;
-								if (message[1] != Message.DefaultId && message[1] != inputMessageId && message[1] != executionMessageId)
-									throw new ApplicationException("Unexpected response");
-								else if (message[0] == Message.ResponseHeader)
-								{
-									if (message[2] == Message.NodeIsIdel)
-									{
-										stream.Write(inputMessage, 0, inputMessage.Length);
-									}
-									else if (message[1] == inputMessageId)
-									{
-										if (message[2] == Message.Successful)
-										{
-											stream.Write(executionMessage, 0, executionMessage.Length);
-											sw2.Start();
-										}
-										else
-											throw new ApplicationException("Remote input file creation failure");
-									}
-									else if (message[1] == executionMessageId && message[2] == Message.Failed)
-										throw new ApplicationException("Remote execution failure");
-								}
-								else if (message[0] == Message.OutputHeader)
-								{
-									File.WriteAllText(outputFilePath, Message.ReadMessage(message));
-									break;
-								}
-							}
+							inputMessage = GetInputMessage(inputMessageId);
+							executionMessage = node.GetExecutionMessage(executionMessageId);
 						}
-						finally
+						catch (Exception ex)
 						{
+							SetNodeState(nodeIndex, NodeState.Idel);
+							throw ex;
+						}
+						var sw = new Stopwatch();
+						var sw2 = new Stopwatch();
+						var done = false;
+
+						TcpClient tcpClient;
+						while (!done)
+						{
+							tcpClient = new TcpClient(AddressFamily.InterNetworkV6);
+							tcpClient.Client.DualMode = true;
+							var connect = tcpClient.ConnectAsync(node.IpEndPoint.Address, node.IpEndPoint.Port);
+							sw.Restart();
+							do
+							{
+								if (((secondsTimeout <= 0 || !sw2.IsRunning) && sw.Elapsed.TotalSeconds >= 60)
+									|| (secondsTimeout > 0 && sw2.Elapsed.TotalSeconds >= secondsTimeout))
+									throw new TimeoutException("Connection timeout");
+								else
+								{
+									await Task.Delay(500, ExecutionCTS.Token);
+									if (connect.IsFaulted) connect = tcpClient.ConnectAsync(node.IpEndPoint.Address, node.IpEndPoint.Port);
+								}
+							} while (!connect.IsCompleted);
+
+							var stream = tcpClient.GetStream();
 							try
 							{
-								stream.Write(Message.TerminationMessage, 0, Message.TerminationMessage.Length);
-							} catch { }
+								while (true)
+								{
+									var getMessage = Message.GetMessage(stream, ExecutionCTS.Token);
+									sw.Restart();
+									while (!getMessage.IsCompleted && !getMessage.IsFaulted)
+									{
+										if (sw.Elapsed.TotalSeconds >= 30)
+											throw new SocketException();
+										else if (secondsTimeout > 0 && sw2.Elapsed.TotalSeconds >= secondsTimeout)
+											throw new TimeoutException("Remote execution timeout");
+										else
+											await Task.Delay(100);
+									}
+									if (getMessage.IsCanceled)
+										throw new TaskCanceledException();
+									else if (getMessage.IsFaulted)
+										throw new SocketException();
+
+									var message = getMessage.Result;
+									if (message[1] != Message.DefaultId && message[1] != inputMessageId && message[1] != executionMessageId)
+										throw new ApplicationException("Unexpected response");
+									else if (message[0] == Message.ResponseHeader)
+									{
+										if (message[2] == Message.NodeIsIdel)
+										{
+											stream.Write(inputMessage, 0, inputMessage.Length);
+										}
+										else if (message[1] == inputMessageId)
+										{
+											if (message[2] == Message.Successful)
+											{
+												stream.Write(executionMessage, 0, executionMessage.Length);
+												sw2.Start();
+											}
+											else
+												throw new ApplicationException("Remote input file creation failure");
+										}
+										else if (message[1] == executionMessageId && message[2] == Message.Failed)
+											throw new ApplicationException("Remote execution failure");
+									}
+									else if (message[0] == Message.OutputHeader)
+									{
+										File.WriteAllText(outputFilePath, Message.ReadMessage(message));
+										stream.Write(Message.TerminationMessage, 0, Message.TerminationMessage.Length);
+										SetNodeState(nodeIndex, NodeState.Idel);
+										done = true;
+										break;
+									}
+								}
+							}
+							catch (Exception ex)
+							{
+								if (!(ex is SocketException))
+								{
+									try
+									{
+										stream.Write(Message.TerminationMessage, 0, Message.TerminationMessage.Length);
+										SetNodeState(nodeIndex, NodeState.Idel);
+									} catch { }
+									throw ex;
+								}
+							}
+							finally
+							{
+								tcpClient.Close();
+							}
 						}
 					}
 				}
 				finally
 				{
-					tcpClient.Close();
 					ExecutionCTS = null;
-					if (nodeIndex >= 0) SetNodeState(nodeIndex, NodeState.Idel);
 				}
+				return nodeIndex;
 			}
-
-			return nodeIndex;
+			else
+				throw new InvalidOperationException();
 		}
 
 		public byte[] GetInputMessage(ushort id = 0)
@@ -267,7 +305,7 @@ namespace Distributor
 			NodePool.Clear();
 			if (File.Exists(NodeStatesFilePath) && Process.GetProcessesByName(ProcessName).Length == 1)
 			{
-				File.Delete(NodeStatesFilePath);
+				//File.Delete(NodeStatesFilePath);
 			}
 		}
 
