@@ -163,8 +163,8 @@ namespace Distributor
 					}
 					else
 					{
-						var inputMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
-						var executionMessageId = Convert.ToUInt16(PidRandom.Next(1, ushort.MaxValue));
+						var inputMessageId = Convert.ToUInt16(PidRandom.Next(Message.MinId, Message.MaxId));
+						var executionMessageId = Convert.ToUInt16(PidRandom.Next(Message.MinId, Message.MaxId));
 						byte[] inputMessage = null, executionMessage = null;
 						try
 						{
@@ -222,7 +222,11 @@ namespace Distributor
 
 									var message = getMessage.Result;
 									if (message[1] != Message.DefaultId && message[1] != inputMessageId && message[1] != executionMessageId)
-										throw new ApplicationException("Unexpected response");
+									{
+										stream.Write(Message.TerminationMessage, 0, Message.TerminationMessage.Length);
+										sw2.Reset();
+										break;
+									}
 									else if (message[0] == Message.ResponseHeader)
 									{
 										if (message[2] == Message.NodeIsIdel)

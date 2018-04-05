@@ -20,6 +20,8 @@ namespace Distributor
 		public const char NodeIsIdel = '\u0013';
 		public const char NodeIsBusy = '\u0014';
 		public const char DefaultId = '\u0000';
+		public const ushort MinId = 19968;
+		public const ushort MaxId = 40912;
 		public const char Separator = '\t';
 		public const char MessageEnd = '\u0099';
 		public readonly static byte[] TerminationMessage = Encoding.Unicode.GetBytes(TerminationHeader + "\u0000" + MessageEnd);

@@ -208,7 +208,7 @@ namespace Distributor
 					}
 					finally
 					{
-						tcpClient.Close();
+						if (tcpClient != null) tcpClient.Close();
 					}
 				}
 			}
