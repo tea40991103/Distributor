@@ -80,6 +80,9 @@ _Chutzpah*
 ipch/
 enc_temp_folder/
 *.aps
+*.db
+*.db3
+*.db3-journal
 *.ncb
 *.opendb
 *.opensdf
@@ -263,3 +266,20 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 __pycache__/
 *.pyc
+
+# =========================
+# Windows detritus
+# =========================
+
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Mac desktop service store files
+.DS_Store
