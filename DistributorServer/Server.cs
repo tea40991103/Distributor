@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using static System.Convert;
 using System.Diagnostics;
 using System.Linq;
 using System.IO;
+using static System.IO.File;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -11,6 +13,8 @@ using System.Threading.Tasks;
 
 namespace Distributor
 {
+	using static Tools;
+
 	public class Server
 	{
 		public static bool Verbose = false;
@@ -56,7 +60,7 @@ namespace Distributor
 			try
 			{
 				string ipAddressStr;
-				int port = Tools.ParseIPEndPoint(ipEndPointStr, out ipAddressStr);
+				int port = ParseIPEndPoint(ipEndPointStr, out ipAddressStr);
 				if (port == 0) port = Node.DefaultPort;
 
 				if (ipAddressStr == "")
@@ -228,7 +232,7 @@ namespace Distributor
 			InputFileName = input.Substring(0, index1);
 			OutputFileName = input.Substring(index1 + 1, index2 - index1 - 1);
 			var inputFileContent = input.Substring(index2 + 1);
-			File.WriteAllText(LocalDir + InputFileName, inputFileContent);
+			WriteAllText(LocalDir + InputFileName, inputFileContent);
 		}
 
 		public byte[] GetOutputMessage(ushort id = 0)
@@ -236,9 +240,9 @@ namespace Distributor
 			if (String.IsNullOrEmpty(OutputFileName)) throw new InvalidOperationException();
 
 			var outputFilePath = LocalDir + OutputFileName;
-			var outputFileContent = Tools.IsAnsiEncoding(outputFilePath) ? File.ReadAllText(outputFilePath, Encoding.Default) : File.ReadAllText(outputFilePath);
+			var outputFileContent = IsAnsiEncoding(outputFilePath) ? ReadAllText(outputFilePath, Encoding.Default) : ReadAllText(outputFilePath);
 			var messageStr = String.Format("{0}{1}{2}{3}",
-				Message.OutputHeader, Convert.ToChar(id),
+				Message.OutputHeader, ToChar(id),
 				outputFileContent, Message.MessageEnd);
 			return Encoding.Unicode.GetBytes(messageStr);
 		}
@@ -246,7 +250,7 @@ namespace Distributor
 		public static byte[] GetResponseMessage(ushort id, char state)
 		{
 			var messageStr = String.Format("{0}{1}{2}{3}",
-				Message.ResponseHeader, Convert.ToChar(id),
+				Message.ResponseHeader, ToChar(id),
 				state, Message.MessageEnd);
 			return Encoding.Unicode.GetBytes(messageStr);
 		}

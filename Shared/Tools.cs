@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using static System.Convert;
 using System.Linq;
 using System.IO;
+using static System.IO.File;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -11,7 +13,7 @@ namespace Distributor
 	{
 		public static bool IsAnsiEncoding(string filePath)
 		{
-			return File.ReadAllText(filePath).IndexOf('�') >= 0;
+			return ReadAllText(filePath).IndexOf('�') >= 0;
 		}
 
 		public static ushort ParseIPEndPoint(string ipEndPointStr, out string ipAddressStr)
@@ -26,7 +28,7 @@ namespace Distributor
 				if (colonIndex == ipEndPointStr.IndexOf(':') || ipEndPointStr[colonIndex - 1] == ']')
 				{
 					ipAddressStr = ipEndPointStr.Substring(0, colonIndex);
-					port = Convert.ToUInt16(ipEndPointStr.Substring(colonIndex + 1));
+					port = ToUInt16(ipEndPointStr.Substring(colonIndex + 1));
 				}
 				else
 					ipAddressStr = ipEndPointStr;
@@ -34,7 +36,7 @@ namespace Distributor
 			else if (colonIndex == 0)
 			{
 				ipAddressStr = "";
-				port = Convert.ToUInt16(ipEndPointStr.Substring(colonIndex + 1));
+				port = ToUInt16(ipEndPointStr.Substring(colonIndex + 1));
 			}
 			else
 			{

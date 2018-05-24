@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using static System.Convert;
 using System.Diagnostics;
 using System.Linq;
 using System.IO;
@@ -9,7 +10,9 @@ using System.Threading;
 using System.Threading.Tasks;
 
 namespace Distributor
-{	
+{
+    using static Tools;
+	
 	public enum NodeState:byte
 	{
 		Idel = 0,
@@ -33,7 +36,7 @@ namespace Distributor
 
 			var args = nodeLine.Split(Message.Separator);
 			string ipAddressStr;
-			int port = Tools.ParseIPEndPoint(args[0], out ipAddressStr);
+			int port = ParseIPEndPoint(args[0], out ipAddressStr);
 			if (port == 0) port = DefaultPort;
 			if (ipAddressStr == "localhost")
 				IpEndPoint = new IPEndPoint(IPAddress.Loopback, port);
@@ -53,7 +56,7 @@ namespace Distributor
 
 			var argsStr = String.IsNullOrEmpty(ArgStr) ? "" : Message.Separator + ArgStr;
 			var messageStr = String.Format("{0}{1}{2}{3}{4}{5}{6}",
-				Message.ExecutionHeader, Convert.ToChar(id),
+				Message.ExecutionHeader, ToChar(id),
 				IpEndPoint.ToString(), Message.Separator,
 				ExecutorPath, argsStr, Message.MessageEnd);
 			return Encoding.Unicode.GetBytes(messageStr);

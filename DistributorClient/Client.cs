@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using static System.Convert;
 using System.Diagnostics;
 using System.Linq;
 using System.IO;
+using static System.IO.File;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -11,6 +13,8 @@ using System.Threading.Tasks;
 
 namespace Distributor
 {
+    using static Tools;
+
 	public class Client
 	{
 		public static bool Verbose = false;
@@ -73,7 +77,7 @@ namespace Distributor
 
 				try
 				{
-					var nodeLines = Tools.IsAnsiEncoding(NodePoolFilePath) ? File.ReadAllLines(NodePoolFilePath, Encoding.Default) : File.ReadAllLines(NodePoolFilePath);
+					var nodeLines = IsAnsiEncoding(NodePoolFilePath) ? ReadAllLines(NodePoolFilePath, Encoding.Default) : ReadAllLines(NodePoolFilePath);
 					foreach (var nodeLine in nodeLines) try { NodePool.Add(new Node(nodeLine)); } catch { }
 				}
 				catch (Exception ex)
@@ -86,7 +90,7 @@ namespace Distributor
 				try
 				{
 					if (File.Exists(NodeStatesFilePath)
-						&& File.GetLastWriteTime(NodeStatesFilePath) > File.GetLastWriteTime(NodePoolFilePath))
+						&& GetLastWriteTime(NodeStatesFilePath) > GetLastWriteTime(NodePoolFilePath))
 						//&& Process.GetProcessesByName(ProcessName).Length > 1)
 					{
 						ReadNodeStates();
@@ -163,8 +167,8 @@ namespace Distributor
 					}
 					else
 					{
-						var inputMessageId = Convert.ToUInt16(PidRandom.Next(Message.MinId, Message.MaxId));
-						var executionMessageId = Convert.ToUInt16(PidRandom.Next(Message.MinId, Message.MaxId));
+						var inputMessageId = ToUInt16(PidRandom.Next(Message.MinId, Message.MaxId));
+						var executionMessageId = ToUInt16(PidRandom.Next(Message.MinId, Message.MaxId));
 						byte[] inputMessage = null, executionMessage = null;
 						try
 						{
@@ -248,7 +252,7 @@ namespace Distributor
 									}
 									else if (message[0] == Message.OutputHeader)
 									{
-										File.WriteAllText(outputFilePath, Message.ReadMessage(message));
+										WriteAllText(outputFilePath, Message.ReadMessage(message));
 										stream.Write(Message.TerminationMessage, 0, Message.TerminationMessage.Length);
 										SetNodeState(nodeIndex, NodeState.Idel);
 										done = true;
@@ -290,9 +294,9 @@ namespace Distributor
 			if (String.IsNullOrEmpty(InputFileName)) throw new InvalidOperationException();
 
 			var inputFilePath = LocalDir + InputFileName;
-			var inputFileContent = Tools.IsAnsiEncoding(inputFilePath) ? File.ReadAllText(inputFilePath, Encoding.Default) : File.ReadAllText(inputFilePath);
+			var inputFileContent = IsAnsiEncoding(inputFilePath) ? ReadAllText(inputFilePath, Encoding.Default) : ReadAllText(inputFilePath);
 			var messageStr = String.Format("{0}{1}{2}{3}{4}{5}{6}{7}",
-				Message.InputHeader, Convert.ToChar(id),
+				Message.InputHeader, ToChar(id),
 				InputFileName, Message.Separator,
 				OutputFileName, Message.Separator,
 				inputFileContent, Message.MessageEnd);
@@ -317,12 +321,12 @@ namespace Distributor
 		{
 			try
 			{
-				NodeStates = File.ReadAllBytes(NodeStatesFilePath);
+				NodeStates = ReadAllBytes(NodeStatesFilePath);
 			}
 			catch
 			{
 				Thread.Sleep(500);
-				NodeStates = File.ReadAllBytes(NodeStatesFilePath);
+				NodeStates = ReadAllBytes(NodeStatesFilePath);
 			}
 		}
 
@@ -330,12 +334,12 @@ namespace Distributor
 		{
 			try
 			{
-				File.WriteAllBytes(NodeStatesFilePath, NodeStates);
+				WriteAllBytes(NodeStatesFilePath, NodeStates);
 			}
 			catch
 			{
 				Thread.Sleep(500);
-				File.WriteAllBytes(NodeStatesFilePath, NodeStates);
+				WriteAllBytes(NodeStatesFilePath, NodeStates);
 			}
 		}
 
