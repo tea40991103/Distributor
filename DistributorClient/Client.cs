@@ -89,9 +89,7 @@ namespace Distributor
 				NodeStatesFilePath = NodePoolFilePath + ".states";
 				try
 				{
-					if (File.Exists(NodeStatesFilePath)
-						&& GetLastWriteTime(NodeStatesFilePath) > GetLastWriteTime(NodePoolFilePath))
-						//&& Process.GetProcessesByName(ProcessName).Length > 1)
+					if (File.Exists(NodeStatesFilePath) && GetLastWriteTime(NodeStatesFilePath) > GetLastWriteTime(NodePoolFilePath))
 					{
 						ReadNodeStates();
 					}
@@ -311,10 +309,6 @@ namespace Distributor
 		public static void ClearNodePool()
 		{
 			NodePool.Clear();
-			if (File.Exists(NodeStatesFilePath) && Process.GetProcessesByName(ProcessName).Length == 1)
-			{
-				//File.Delete(NodeStatesFilePath);
-			}
 		}
 
 		static void ReadNodeStates()

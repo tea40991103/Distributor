@@ -126,7 +126,7 @@ namespace Distributor
 							while (!stream.DataAvailable)
 							{
 								stream.Write(response, 0, response.Length);
-								await Task.Delay(2000, ListeningCTS.Token);
+								await Task.Delay(1000, ListeningCTS.Token);
 								if (execution != null && (execution.IsCompleted || execution.IsFaulted)) break;
 							}
 							if (execution != null && execution.IsCompleted)
