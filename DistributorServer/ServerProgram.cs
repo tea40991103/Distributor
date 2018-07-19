@@ -63,7 +63,7 @@ namespace Distributor
 			{
 				Console.Write("{0}: ", Server.ProcessName);
 				Console.WriteLine(ex.Message);
-				throw ex;
+				throw;
 			}
 		}
 

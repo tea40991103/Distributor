@@ -80,10 +80,10 @@ namespace Distributor
 					var nodeLines = IsAnsiEncoding(NodePoolFilePath) ? ReadAllLines(NodePoolFilePath, Encoding.Default) : ReadAllLines(NodePoolFilePath);
 					foreach (var nodeLine in nodeLines) try { NodePool.Add(new Node(nodeLine)); } catch { }
 				}
-				catch (Exception ex)
+				catch
 				{
 					ClearNodePool();
-					throw ex;
+					throw;
 				}
 
 				NodeStatesFilePath = NodePoolFilePath + ".states";
@@ -101,10 +101,10 @@ namespace Distributor
 					}
 					WriteNodeStates();
 				}
-				catch (Exception ex)
+				catch
 				{
 					ClearNodePool();
-					throw ex;
+					throw;
 				}
 			}
 			else if (nodePoolFilePath != NodePoolFilePath || inputFileName != InputFileName || outputFileName != OutputFileName)
